@@ -17,6 +17,9 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG")
 
 add_executable(sortlab
     src/main.cpp
+    src/generators.cpp
+    src/benchmark.cpp
+    src/output.cpp
 )
 
 target_include_directories(sortlab PRIVATE src)

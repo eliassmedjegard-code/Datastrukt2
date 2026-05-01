@@ -2,126 +2,128 @@
 #include <algorithm>
 #include <iterator>
 
-// Alla sorter är templates på iteratortyp. Det gör dem generella, men
-// huvudpoängen är att vi kan testa på vec_t::iterator i denna labb
-// utan att behöva tänka på typkonverteringar.
+// Alla sorter är templates på iteratortyp - de skrivs därför direkt i
+// headern (templates kan inte ligga i cpp-filer eftersom kompilatorn
+// behöver se hela definitionen vid varje instansiering).
+//
+// Variabelnamn är medvetet beskrivande snarare än enbokstaviga
+// (current, hole, scan, ...) för att läsbarheten ska bli bra.
 
 // =====================================================================
 // INSERTION SORT
 // =====================================================================
 // Tidskomplexitet: O(N^2) värsta fall, O(N) bästa fall (redan sorterad).
-// Vi använder "shift" istället för "swap" inne i loopen - det halverar
-// ungefär antalet minnesoperationer eftersom vi bara skriver varje
-// element en gång istället för tre gånger per swap.
+// Vi använder "shift" istället för "swap" - varje element skrivs bara
+// en gång istället för tre per swap, vilket halverar antalet
+// minnesoperationer.
 template<typename It>
 void insertion_sort(It first, It last) {
-    for (It i = first + 1; i < last; ++i) {
-        auto val = *i;
-        It j = i;
-        while (j > first && *(j - 1) > val) {
-            *j = *(j - 1);
-            --j;
+    for (It current = first + 1; current < last; ++current) {
+        auto value = *current;
+        It hole = current;
+        while (hole > first && *(hole - 1) > value) {
+            *hole = *(hole - 1);
+            --hole;
         }
-        *j = val;
+        *hole = value;
     }
 }
 
 // =====================================================================
 // SELECTION SORT
 // =====================================================================
-// Tidskomplexitet: ALLTID O(N^2), oavsett indata. Det är ett "rättvist"
-// jämförelseunderlag eftersom datatypen inte spelar roll - vi kan
-// observera om mätningarna är någotsånär konsistenta över de fyra
-// generatorerna (de borde vara det).
+// Tidskomplexitet: ALLTID O(N^2), oavsett indata.
+// Bra som referens - mätningarna borde vara mycket lika över alla fyra
+// generatorerna eftersom datatypen inte påverkar arbetsmängden.
 template<typename It>
 void selection_sort(It first, It last) {
-    for (It i = first; i < last; ++i) {
-        It min_it = i;
-        for (It j = i + 1; j < last; ++j) {
-            if (*j < *min_it) min_it = j;
+    for (It boundary = first; boundary < last; ++boundary) {
+        It min_pos = boundary;
+        for (It scan = boundary + 1; scan < last; ++scan) {
+            if (*scan < *min_pos) min_pos = scan;
         }
-        std::iter_swap(i, min_it);
+        std::iter_swap(boundary, min_pos);
     }
 }
 
 // =====================================================================
-// QUICKSORT - hjälpare: Lomuto-partition
+// LOMUTO-PARTITION (hjälpare till båda quicksort-varianterna)
 // =====================================================================
-// Lomuto är enklare att skriva korrekt än Hoare. Pivoten är sista
-// elementet. Returnerar iterator till pivotens slutposition.
+// Pivoten är ALLTID sista elementet. Detta är medvetet - båda
+// quicksort-varianterna delar samma partition, och median-of-three
+// arrangerar bara om datan så att medianen hamnar sist före anropet.
 //
-// Notera: Lomuto har en känd svaghet med många lika element - den ger
-// O(N^2) när alla element är lika, eftersom alla går åt samma håll.
-// Detta är ett av fenomenen vi VILL observera i labben.
+// Lomutos kända svaghet: när alla element är lika hamnar de alla i
+// vänstra partitionen → O(N^2). Detta är fenomenet vi observerar med
+// constant_gen.
 template<typename It>
 It partition_lomuto(It first, It last) {
     auto pivot = *(last - 1);
-    It i = first;
-    for (It j = first; j < last - 1; ++j) {
-        if (*j <= pivot) {
-            std::iter_swap(i, j);
-            ++i;
+    It store_pos = first;
+    for (It scan = first; scan < last - 1; ++scan) {
+        if (*scan <= pivot) {
+            std::iter_swap(store_pos, scan);
+            ++store_pos;
         }
     }
-    std::iter_swap(i, last - 1);
-    return i;
+    std::iter_swap(store_pos, last - 1);
+    return store_pos;
 }
 
 // =====================================================================
-// QUICKSORT med naiv pivot (sista elementet)
+// QUICKSORT med naiv pivot (höger element)
 // =====================================================================
 // Tidskomplexitet: O(N log N) i medel, O(N^2) i värsta fall.
-// Värsta fall inträffar för redan sorterad data (stigande/fallande)
-// eftersom pivoten då alltid är max- eller minelementet, vilket ger
-// helt obalanserade partitioner. Ett av huvudfynden i labben.
+// Värsta fall = redan sorterad data: pivoten är då alltid max- eller
+// minelementet → helt obalanserade partitioner → O(N^2) och O(N) djup
+// rekursion (risk för stack overflow vid stora N).
 template<typename It>
 void quicksort(It first, It last) {
     if (last - first <= 1) return;
-    It p = partition_lomuto(first, last);
-    quicksort(first, p);
-    quicksort(p + 1, last);
+    It split = partition_lomuto(first, last);
+    quicksort(first, split);
+    quicksort(split + 1, last);
 }
 
 // =====================================================================
-// QUICKSORT med median-of-three pivot
+// MEDIAN-OF-THREE (hjälpare till quicksort_m3)
 // =====================================================================
 // Vi tar medianen av första, mittersta och sista elementet och
-// använder den som pivot. För redan sorterad data blir då pivoten
-// det riktiga mittenelementet -> perfekt balans -> O(N log N).
+// placerar den på sista positionen så att partition_lomuto plockar
+// upp den som pivot.
 //
-// Detta löser worst case för stigande/fallande data men hjälper INTE
-// mot konstant data, eftersom alla element är lika och Lomuto-loopen
-// fortfarande hamnar i obalans.
+// För redan sorterad data blir då pivoten det riktiga mittenelementet
+// → perfekt partitionering → O(N log N) istället för O(N^2). Det är
+// hela poängen med median-of-three.
+//
+// OBS: hjälper INTE mot constant_gen eftersom alla element är lika -
+// Lomuto-loopen hamnar i obalans oavsett vilken pivot vi väljer.
 template<typename It>
 void median_of_three(It first, It last) {
-    It mid    = first + (last - first) / 2;
-    It lastEl = last - 1;
+    It mid       = first + (last - first) / 2;
+    It last_pos  = last - 1;
 
-    // Sortera trippeln (first, mid, lastEl) med tre jämförelser så vi
-    // vet vem som är medianen.
-    if (*first > *mid)    std::iter_swap(first, mid);
-    if (*first > *lastEl) std::iter_swap(first, lastEl);
-    if (*mid   > *lastEl) std::iter_swap(mid, lastEl);
-    // Invariant nu: *first <= *mid <= *lastEl, dvs medianen är på 'mid'.
+    if (*first > *mid)      std::iter_swap(first, mid);
+    if (*first > *last_pos) std::iter_swap(first, last_pos);
+    if (*mid   > *last_pos) std::iter_swap(mid, last_pos);
+    // Invariant nu: *first <= *mid <= *last_pos, dvs medianen är på 'mid'.
 
-    // Flytta medianen till sista positionen så att partition_lomuto
-    // (som plockar pivot från last-1) får rätt element som pivot.
-    std::iter_swap(mid, lastEl);
+    // Flytta medianen sist så partition_lomuto kan plocka upp den.
+    std::iter_swap(mid, last_pos);
 }
 
 template<typename It>
 void quicksort_m3(It first, It last) {
     if (last - first <= 1) return;
 
-    // median_of_three behöver minst 3 element. För 2 element räcker det
-    // med en jämförelse och eventuell swap.
+    // Specialfall: median_of_three behöver minst 3 element.
     if (last - first == 2) {
         if (*first > *(first + 1)) std::iter_swap(first, first + 1);
         return;
     }
 
     median_of_three(first, last);
-    It p = partition_lomuto(first, last);
-    quicksort_m3(first, p);
-    quicksort_m3(p + 1, last);
+    It split = partition_lomuto(first, last);
+    quicksort_m3(first, split);
+    quicksort_m3(split + 1, last);
 }
