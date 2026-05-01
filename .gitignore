@@ -1,0 +1,7 @@
+build/
+results/
+*.o
+*.obj
+*.exe
+.vscode/
+.idea/
